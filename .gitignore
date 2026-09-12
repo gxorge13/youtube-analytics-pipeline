@@ -1,0 +1,13 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+logs/
+config/
+plugins/
+include/
+data/YT_data_*.json
+!data/sample_video_stats.json

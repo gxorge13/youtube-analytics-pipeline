@@ -1,0 +1,20 @@
+[
+  {
+    "video_id": "sample00001",
+    "published_at": "2026-01-10T14:00:00Z",
+    "title": "Sample long-form video",
+    "duration": "PT12M34S",
+    "views": "12500",
+    "likes": "910",
+    "comment_count": "44"
+  },
+  {
+    "video_id": "sample00002",
+    "published_at": "2026-01-12T14:00:00Z",
+    "title": "Sample short video",
+    "duration": "PT42S",
+    "views": "8300",
+    "likes": "760",
+    "comment_count": "31"
+  }
+]
