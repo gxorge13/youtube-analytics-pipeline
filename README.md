@@ -1,48 +1,42 @@
 # YouTube Analytics Pipeline
 
-A containerized data pipeline that extracts public channel and video statistics from the YouTube Data API, preserves a raw JSON snapshot, and loads normalized records into staging and core PostgreSQL schemas.
+I built this project to get more hands-on experience with data pipelines and Apache Airflow. It pulls public video statistics from the YouTube Data API, saves a raw JSON copy, and loads the results into PostgreSQL.
 
-Built as a portfolio project to explore orchestration, incremental warehouse updates, data transformation, and reproducible local infrastructure.
+The pipeline runs locally with Docker Compose. Airflow handles the workflow, PostgreSQL stores the data, and Redis and Celery run the tasks.
 
-## Architecture
+## How it works
 
 ```mermaid
 flowchart LR
-    API[YouTube Data API] -->|extract| EX[Airflow extraction tasks]
-    EX -->|dated JSON snapshot| RAW[(Raw data volume)]
-    RAW -->|load and reconcile| STG[(PostgreSQL staging)]
-    STG -->|transform duration and classify type| CORE[(PostgreSQL core)]
-    AF[Airflow scheduler] --> EX
-    AF --> STG
+    API[YouTube Data API] -->|extract| EX[Airflow tasks]
+    EX -->|save JSON| RAW[(Raw data)]
+    RAW -->|load| STG[(Staging tables)]
+    STG -->|clean and transform| CORE[(Core tables)]
     REDIS[(Redis)] --> WORKER[Celery worker]
     WORKER --> EX
     WORKER --> STG
 ```
 
-## What it demonstrates
+1. The extraction DAG looks up a channel and gets its uploaded videos.
+2. Video IDs are requested in batches of 50 to stay within the API limit.
+3. The response is saved as a dated JSON file before any transformations are made.
+4. A second DAG loads the data into staging tables, converts the video duration, and updates the core tables.
+5. Videos that are no longer in the latest extract are removed from the database.
 
-- TaskFlow-based extraction with pagination and batches of up to 50 video IDs per API request.
-- A daily raw JSON snapshot before warehouse loading.
-- Staging and core schemas with insert, update, and deletion reconciliation.
-- ISO 8601 duration transformation and short-form video classification.
-- Airflow orchestration with PostgreSQL, Redis, and Celery, all defined in Docker Compose.
-- Parameterized SQL for record deletion and unit-tested transformation logic.
-- Runtime loading of the API key, keeping credentials out of DAG discovery and source control.
+The core table also labels videos as `short` or `normal` using a 60-second cutoff.
 
-## Repository map
+## What I worked on
 
-| Path | Purpose |
-| --- | --- |
-| [`dags/main.py`](dags/main.py) | Extraction and database-load orchestration |
-| [`dags/api/video_stats.py`](dags/api/video_stats.py) | YouTube API pagination and metric extraction |
-| [`dags/api/datawarehouse/`](dags/api/datawarehouse/) | PostgreSQL schemas, reconciliation, and transformations |
-| [`data/sample_video_stats.json`](data/sample_video_stats.json) | Synthetic example matching the extraction schema |
-| [`tests/`](tests/) | Dependency-free transformation tests |
-| [`docker-compose.yaml`](docker-compose.yaml) | Local Airflow, PostgreSQL, Redis, and Celery stack |
+- Built the extraction and database workflows with Airflow's TaskFlow API
+- Added pagination and batched requests for the YouTube API
+- Designed separate staging and core schemas in PostgreSQL
+- Wrote update, insert, and deletion logic so the pipeline can be run more than once
+- Added tests for the ISO 8601 duration conversion and short-video classification
+- Put the full local setup into Docker Compose
 
-## Quick start
+## Running it locally
 
-Prerequisites: Docker Desktop with at least 4 GB of memory available, plus a YouTube Data API v3 key restricted to that API.
+You will need Docker Desktop and a YouTube Data API v3 key.
 
 ```bash
 git clone https://github.com/gxorge13/youtube-analytics-pipeline.git
@@ -50,45 +44,44 @@ cd youtube-analytics-pipeline
 cp .env.example .env
 ```
 
-Replace `API_KEY` in `.env` and optionally change `CHANNEL_HANDLE`. Then initialize and start the stack:
+Add your API key to `.env`. You can also change `CHANNEL_HANDLE` if you want to collect data for a different public channel.
 
 ```bash
 docker compose up --build -d
 ```
 
-Open <http://localhost:8080>, sign in with the local credentials from `.env`, enable `produce_json`, and trigger it. The extraction DAG writes a dated snapshot and then triggers `update_db` to reconcile the staging and core tables.
+Open <http://localhost:8080>, sign in with the local credentials from `.env`, enable the `produce_json` DAG, and trigger it. It will collect the data and then start the database update DAG.
 
-Stop the environment and remove its local volumes with:
+To stop everything and remove the local database volumes:
 
 ```bash
 docker compose down --volumes
 ```
 
-## Run the tests
+## Tests
 
-The transformation tests use only the Python standard library:
+The transformation tests do not need Airflow or Docker:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-They cover valid and invalid ISO 8601 durations, the 60-second short-form boundary, input immutability, and the PostgreSQL `TIME` storage limit.
+## Project structure
 
-## Data model
+| Path | What it contains |
+| --- | --- |
+| [`dags/main.py`](dags/main.py) | The two Airflow DAGs |
+| [`dags/api/video_stats.py`](dags/api/video_stats.py) | YouTube API requests and pagination |
+| [`dags/api/datawarehouse/`](dags/api/datawarehouse/) | Database loading and transformations |
+| [`data/sample_video_stats.json`](data/sample_video_stats.json) | A small example using made-up data |
+| [`tests/`](tests/) | Tests for the transformation code |
+| [`docker-compose.yaml`](docker-compose.yaml) | Airflow, PostgreSQL, Redis, and Celery services |
 
-The staging schema retains the API representation. The core schema converts the duration to a PostgreSQL `TIME` value and adds `Video_Type` (`short` for durations up to 60 seconds, otherwise `normal`). Video IDs are primary keys, allowing repeat runs to update current engagement counts and remove records no longer returned for the selected channel.
+## Current limitations
 
-## Security and operating limits
+- The project is meant to run locally, and the default credentials should not be used for a deployed version.
+- YouTube API quotas limit how much data can be collected at once.
+- Durations of one day or longer are rejected because the core table currently stores duration as PostgreSQL `TIME`.
+- The transformation code has unit tests, but the complete pipeline still needs Docker and a real API key to test.
 
-- `.env` and dated API extracts are ignored. The checked-in sample is synthetic.
-- Use a restricted API key and rotate it immediately if it is exposed.
-- The Compose stack uses development credentials and is intended only for local demonstration.
-- YouTube API quotas constrain extraction volume. The project does not store comments or private user data.
-- The core schema currently rejects videos lasting one day or more because PostgreSQL `TIME` is used for duration storage.
-- The pipeline has unit coverage for pure transformations. A live API and full-container integration run require user-provided credentials and Docker Desktop.
-
-## Future improvements
-
-- Replace row-at-a-time writes with batched PostgreSQL upserts.
-- Add data-quality checks for uniqueness, nonnegative metrics, and staging/core row parity.
-- Add an analytics layer for engagement trends and channel-level summaries.
+If I continue developing this, the next things I would add are batched database upserts, data-quality checks, and a small dashboard for viewing channel trends.
