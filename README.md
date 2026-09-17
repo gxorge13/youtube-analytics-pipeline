@@ -7,14 +7,14 @@ The pipeline runs locally with Docker Compose. Airflow handles the workflow, Pos
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TD
     API[YouTube Data API] -->|extract| EX[Airflow tasks]
-    EX -->|save JSON| RAW[(Raw data)]
-    RAW -->|load| STG[(Staging tables)]
-    STG -->|clean and transform| CORE[(Core tables)]
     REDIS[(Redis)] --> WORKER[Celery worker]
     WORKER --> EX
+    EX -->|save JSON| RAW[(Raw data)]
+    RAW -->|load| STG[(Staging tables)]
     WORKER --> STG
+    STG -->|clean and transform| CORE[(Core tables)]
 ```
 
 1. The extraction DAG looks up a channel and gets its uploaded videos.
